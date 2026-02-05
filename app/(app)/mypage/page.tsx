@@ -2,12 +2,12 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { 
-  User, 
-  LogOut, 
-  Bookmark, 
-  Pill, 
-  BarChart3, 
+import {
+  User,
+  LogOut,
+  Bookmark,
+  Pill,
+  BarChart3,
   ChevronRight,
   Star,
   Edit,
@@ -18,8 +18,8 @@ import {
   Send,
   Loader2
 } from "lucide-react"
-import { AppHeader } from "@/components/common/app-header"
-import { AddMedicationModal } from "@/components/posts/add-medication-modal"
+import { AppHeader } from "@/components/app-header"
+import { AddMedicationModal } from "@/components/add-medication-modal"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -51,7 +51,7 @@ export default function MyPage() {
   const [showAllSaved, setShowAllSaved] = useState(false)
   const [editingMedication, setEditingMedication] = useState<Medication | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<{type: "medication" | "saved", id: string} | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ type: "medication" | "saved", id: string } | null>(null)
   const [selectedSavedItem, setSelectedSavedItem] = useState<SavedItem | null>(null)
   const [showSavedItemModal, setShowSavedItemModal] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -82,7 +82,7 @@ export default function MyPage() {
         "음식": `${selectedSavedItem.titleKo || selectedSavedItem.title} 관련 약을 복용할 때는 자몽주스를 피하는 것이 좋고, 술은 약효에 영향을 줄 수 있으니 주의하세요.`,
         "default": `${selectedSavedItem.titleKo || selectedSavedItem.title}에 대해 더 궁금하신 점이 있으시군요! 구체적인 의료 상담은 담당 의사나 약사와 상담하시는 것이 가장 정확합니다.`
       }
-      
+
       const key = Object.keys(responses).find(k => userMessage.includes(k)) || "default"
       setChatMessages(prev => [...prev, { role: "assistant", content: responses[key] }])
       setIsAiLoading(false)
@@ -380,7 +380,7 @@ export default function MyPage() {
                 <h4 className="text-sm font-medium text-muted-foreground mb-3">
                   AI에게 추가 질문하기
                 </h4>
-                
+
                 {chatMessages.length > 0 && (
                   <div className="space-y-3 mb-4 max-h-40 overflow-y-auto">
                     {chatMessages.map((msg, idx) => (

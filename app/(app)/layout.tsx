@@ -14,12 +14,12 @@ export default function AppLayout({
       <div className="min-h-screen bg-background">
         {/* Desktop Sidebar */}
         <SidebarNavigation />
-        
+
         {/* Main Content Area */}
         <div className="lg:pl-64 pb-20 lg:pb-0">
           {children}
         </div>
-        
+
         {/* Mobile Bottom Navigation */}
         <div className="lg:hidden">
           <BottomNavigation />

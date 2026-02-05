@@ -23,10 +23,10 @@ interface SlotProps extends React.HTMLAttributes<HTMLElement> {
 function Slot({ children, ...props }: SlotProps) {
   if (!React.isValidElement(children)) return null;
 
-  return React.cloneElement(children as React.ReactElement, {
+  return React.cloneElement(children as React.ReactElement<any>, {
     ...props,
     className: cn(
-      (children as React.ReactElement).props.className,
+      (children as React.ReactElement<any>).props?.className,
       props.className,
     ),
   });
@@ -67,7 +67,6 @@ export const Button = React.forwardRef<ButtonRef, ButtonProps>(
 
     return (
       <Comp
-        // @ts-expect-error: ref type differs when using Slot
         ref={ref}
         {...(asChild ? props : { type, ...props })}
         className={cn(

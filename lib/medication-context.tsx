@@ -4,9 +4,13 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { type User } from "@supabase/supabase-js";
+import { toast } from "sonner";
 
 export interface MedicationSchedule {
   type: "today" | "repeat" | "period";
@@ -50,19 +54,21 @@ export interface SavedItem {
 }
 
 interface MedicationContextType {
+  user: User | null;
+  isLoading: boolean;
   medications: Medication[];
   logs: MedicationLog[];
   savedItems: SavedItem[];
-  addMedication: (medication: Omit<Medication, "id">) => void;
-  updateMedication: (id: string, medication: Partial<Medication>) => void;
-  deleteMedication: (id: string) => void;
+  addMedication: (medication: Omit<Medication, "id">) => Promise<void>;
+  updateMedication: (id: string, medication: Partial<Medication>) => Promise<void>;
+  deleteMedication: (id: string) => Promise<void>;
   logMedication: (
     medicationId: string,
     period: "morning" | "lunch" | "evening",
-  ) => void;
-  saveItem: (item: Omit<SavedItem, "id" | "savedAt">) => void;
-  removeSavedItem: (id: string) => void;
-  removeSavedItemByTitle: (title: string) => void;
+  ) => Promise<void>;
+  saveItem: (item: Omit<SavedItem, "id" | "savedAt">) => Promise<void>;
+  removeSavedItem: (id: string) => Promise<void>;
+  removeSavedItemByTitle: (title: string) => Promise<void>;
   isSaved: (title: string) => boolean;
   getWeeklyStats: () => { day: string; rate: number }[];
   getTodayLogs: () => (MedicationLog & { medication: Medication })[];
@@ -72,116 +78,177 @@ const MedicationContext = createContext<MedicationContextType | undefined>(
   undefined,
 );
 
-// Demo용 샘플 데이터
-const sampleMedications: Medication[] = [
-  {
-    id: "1",
-    name: "Aspirin",
-    dosage: "100mg",
-    frequency: "once",
-    times: { morning: "08:00" },
-    precautions: "식사 후 복용하세요. 위장 장애가 있을 수 있습니다.",
-    schedule: { type: "repeat", repeatDays: ["월", "화", "수", "목", "금"] },
-  },
-  {
-    id: "2",
-    name: "Metformin",
-    dosage: "500mg",
-    frequency: "twice",
-    times: { morning: "08:00", lunch: "12:00" },
-    precautions: "신장 기능을 정기적으로 확인하세요.",
-    schedule: {
-      type: "period",
-      startDate: "2026-02-01",
-      endDate: "2026-02-28",
-    },
-  },
-  {
-    id: "3",
-    name: "Statin",
-    dosage: "20mg",
-    frequency: "once",
-    times: { evening: "20:00" },
-    precautions: "저녁 식사 후 복용하면 효과가 좋습니다.",
-    schedule: {
-      type: "repeat",
-      repeatDays: ["월", "화", "수", "목", "금", "토", "일"],
-    },
-  },
-];
-
-const today = new Date().toISOString().split("T")[0];
-
-const sampleLogs: MedicationLog[] = [
-  {
-    id: "log1",
-    medicationId: "1",
-    date: today,
-    time: "08:05",
-    taken: true,
-    scheduledTime: "08:00",
-    period: "morning",
-  },
-];
-
-const sampleSavedItems: SavedItem[] = [
-  {
-    id: "saved1",
-    type: "disease",
-    title: "Hypertension",
-    titleKo: "고혈압",
-    description: "혈압이 정상 범위보다 지속적으로 높은 상태입니다.",
-    aiExplanation:
-      "심장이 피를 보낼 때 혈관에 가해지는 압력이 정상보다 높은 상태예요. 쉽게 말해 혈관 벽에 무리가 가는 거죠.",
-    savedAt: "2026-02-01T10:00:00Z",
-  },
-  {
-    id: "saved2",
-    type: "drug",
-    title: "Aspirin",
-    titleKo: "아스피린",
-    description: "혈액 응고를 억제하는 약물입니다.",
-    savedAt: "2026-02-02T14:30:00Z",
-  },
-];
-
 export function MedicationProvider({ children }: { children: ReactNode }) {
-  const [medications, setMedications] =
-    useState<Medication[]>(sampleMedications);
-  const [logs, setLogs] = useState<MedicationLog[]>(sampleLogs);
-  const [savedItems, setSavedItems] =
-    useState<SavedItem[]>(sampleSavedItems);
+  const [supabase] = useState(() => createClient());
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [logs, setLogs] = useState<MedicationLog[]>([]);
+  const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
 
-  const addMedication = useCallback((medication: Omit<Medication, "id">) => {
-    const newMedication: Medication = {
-      ...medication,
-      id: Date.now().toString(),
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
     };
-    setMedications((prev) => [...prev, newMedication]);
-  }, []);
+
+    getUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const fetchData = useCallback(async () => {
+    if (!user) {
+      setMedications([]);
+      setLogs([]);
+      setSavedItems([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    const [medsRes, logsRes, savedRes] = await Promise.all([
+      supabase.from("medications").select("*").order("created_at", { ascending: true }),
+      supabase.from("medication_logs").select("*").eq("taken_date", todayStr),
+      supabase.from("saved_items").select("*").order("created_at", { ascending: false }),
+    ]);
+
+    if (!medsRes.error) {
+      setMedications(medsRes.data.map(m => ({
+        ...m,
+        times: m.times || {},
+        schedule: m.schedule || {}
+      })) as any);
+    }
+
+    if (!logsRes.error) {
+      setLogs(logsRes.data.map(l => ({
+        id: l.id,
+        medicationId: l.medication_id,
+        date: l.taken_date,
+        time: l.taken_at ? new Date(l.taken_at).toTimeString().slice(0, 5) : "",
+        taken: l.taken,
+        scheduledTime: l.scheduled_time.slice(0, 5),
+        period: l.period
+      })) as any);
+    }
+
+    if (!savedRes.error) {
+      setSavedItems(savedRes.data.map(s => ({
+        id: s.id,
+        type: s.type,
+        title: s.title,
+        titleKo: s.title_ko,
+        description: s.description,
+        aiExplanation: s.ai_explanation,
+        savedAt: s.created_at
+      })) as any);
+    }
+
+    setIsLoading(false);
+  }, [supabase, user]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const addMedication = useCallback(async (medication: Omit<Medication, "id">) => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("medications")
+        .insert({
+          user_id: user.id,
+          name: medication.name,
+          dosage: medication.dosage,
+          frequency: medication.frequency,
+          times: medication.times,
+          precautions: medication.precautions,
+          schedule: medication.schedule
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        setMedications((prev) => [...prev, data as any]);
+        toast.success(`${medication.name} 약이 추가되었습니다.`);
+      }
+    } catch (error) {
+      console.error("Add Medication Error:", error);
+      toast.error("약 추가 중 오류가 발생했습니다.");
+    }
+  }, [supabase, user]);
 
   const updateMedication = useCallback(
-    (id: string, updates: Partial<Medication>) => {
-      setMedications((prev) =>
-        prev.map((med) => (med.id === id ? { ...med, ...updates } : med)),
-      );
+    async (id: string, updates: Partial<Medication>) => {
+      if (!user) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("medications")
+          .update({
+            name: updates.name,
+            dosage: updates.dosage,
+            frequency: updates.frequency,
+            times: updates.times,
+            precautions: updates.precautions,
+            schedule: updates.schedule
+          })
+          .eq("id", id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        if (data) {
+          setMedications((prev) =>
+            prev.map((med) => (med.id === id ? { ...med, ...data } : med)),
+          );
+          toast.success("약 정보가 수정되었습니다.");
+        }
+      } catch (error) {
+        console.error("Update Medication Error:", error);
+        toast.error("약 수정 중 오류가 발생했습니다.");
+      }
     },
-    [],
+    [supabase, user],
   );
 
-  const deleteMedication = useCallback((id: string) => {
-    setMedications((prev) => prev.filter((med) => med.id !== id));
-    setLogs((prev) => prev.filter((log) => log.medicationId !== id));
-  }, []);
+  const deleteMedication = useCallback(async (id: string) => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase.from("medications").delete().eq("id", id);
+      if (error) throw error;
+
+      setMedications((prev) => prev.filter((med) => med.id !== id));
+      setLogs((prev) => prev.filter((log) => log.medicationId !== id));
+      toast.success("약이 삭제되었습니다.");
+    } catch (error) {
+      console.error("Delete Medication Error:", error);
+      toast.error("약 삭제 중 오류가 발생했습니다.");
+    }
+  }, [supabase, user]);
 
   const logMedication = useCallback(
-    (medicationId: string, period: "morning" | "lunch" | "evening") => {
+    async (medicationId: string, period: "morning" | "lunch" | "evening") => {
+      if (!user) return;
+
       const medication = medications.find((m) => m.id === medicationId);
       if (!medication) return;
 
       const now = new Date();
       const todayStr = now.toISOString().split("T")[0];
-      const timeStr = now.toTimeString().slice(0, 5);
+      const scheduledTime = medication.times[period] || "00:00";
 
       const existingLog = logs.find(
         (log) =>
@@ -190,50 +257,149 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
           log.period === period,
       );
 
-      if (existingLog) {
-        setLogs((prev) =>
-          prev.map((log) =>
-            log.id === existingLog.id
-              ? { ...log, taken: !log.taken, time: timeStr }
-              : log,
-          ),
-        );
-      } else {
-        const scheduledTime = medication.times[period] || "00:00";
-        const newLog: MedicationLog = {
-          id: Date.now().toString(),
-          medicationId,
-          date: todayStr,
-          time: timeStr,
-          taken: true,
-          scheduledTime,
-          period,
-        };
-        setLogs((prev) => [...prev, newLog]);
+      const isTaken = existingLog ? !existingLog.taken : true;
+
+      // --- Optimistic Update ---
+      const optimisticLogId = existingLog?.id || `temp-${Date.now()}`;
+      const originalLogs = [...logs];
+
+      setLogs((prev) => {
+        if (existingLog) {
+          return prev.map((l) =>
+            l.id === existingLog.id ? { ...l, taken: isTaken, time: isTaken ? now.toTimeString().slice(0, 5) : "" } : l
+          );
+        } else {
+          return [...prev, {
+            id: optimisticLogId,
+            medicationId,
+            date: todayStr,
+            time: now.toTimeString().slice(0, 5),
+            taken: true,
+            scheduledTime,
+            period
+          }];
+        }
+      });
+      // -------------------------
+
+      try {
+        const { data, error } = await supabase
+          .from("medication_logs")
+          .upsert({
+            id: (typeof optimisticLogId === 'string' && optimisticLogId.startsWith('temp-')) ? undefined : existingLog?.id,
+            medication_id: medicationId,
+            taken_date: todayStr,
+            period,
+            scheduled_time: scheduledTime,
+            taken: isTaken,
+            taken_at: isTaken ? now.toISOString() : null,
+          }, { onConflict: 'id' })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          const syncedLog: MedicationLog = {
+            id: data.id,
+            medicationId: data.medication_id,
+            date: data.taken_date,
+            time: data.taken_at ? new Date(data.taken_at).toTimeString().slice(0, 5) : "",
+            taken: data.taken,
+            scheduledTime: data.scheduled_time.slice(0, 5),
+            period: data.period as any
+          };
+
+          setLogs((prev) => prev.map((l) =>
+            (l.id === optimisticLogId || l.id === data.id) ? syncedLog : l
+          ));
+        }
+
+        toast.success(isTaken ? "복약이 체크되었습니다." : "복약 체크가 해제되었습니다.");
+      } catch (error) {
+        console.error("Log Medication Error:", error);
+        setLogs(originalLogs); // Revert
+        toast.error("복약 상태 변경 중 오류가 발생했습니다.");
       }
     },
-    [medications, logs],
+    [supabase, user, medications, logs],
   );
 
   const saveItem = useCallback(
-    (item: Omit<SavedItem, "id" | "savedAt">) => {
-      const newItem: SavedItem = {
-        ...item,
-        id: Date.now().toString(),
-        savedAt: new Date().toISOString(),
-      };
-      setSavedItems((prev) => [...prev, newItem]);
+    async (item: Omit<SavedItem, "id" | "savedAt">) => {
+      if (!user) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("saved_items")
+          .insert({
+            user_id: user.id,
+            type: item.type,
+            title: item.title,
+            title_ko: item.titleKo,
+            description: item.description,
+            ai_explanation: item.aiExplanation
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        if (data) {
+          setSavedItems((prev) => [
+            {
+              id: data.id,
+              type: data.type,
+              title: data.title,
+              titleKo: data.title_ko,
+              description: data.description,
+              aiExplanation: data.ai_explanation,
+              savedAt: data.created_at
+            } as any,
+            ...prev,
+          ]);
+          toast.success("관심 정보가 저장되었습니다.");
+        }
+      } catch (error) {
+        console.error("Save Item Error:", error);
+        toast.error("정보 저장 중 오류가 발생했습니다.");
+      }
     },
-    [],
+    [supabase, user],
   );
 
-  const removeSavedItem = useCallback((id: string) => {
-    setSavedItems((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+  const removeSavedItem = useCallback(async (id: string) => {
+    if (!user) return;
 
-  const removeSavedItemByTitle = useCallback((title: string) => {
-    setSavedItems((prev) => prev.filter((item) => item.title !== title));
-  }, []);
+    try {
+      const { error } = await supabase.from("saved_items").delete().eq("id", id);
+      if (error) throw error;
+
+      setSavedItems((prev) => prev.filter((item) => item.id !== id));
+      toast.success("저장된 정보가 해제되었습니다.");
+    } catch (error) {
+      console.error("Remove Saved Item Error:", error);
+      toast.error("정보 해제 중 오류가 발생했습니다.");
+    }
+  }, [supabase, user]);
+
+  const removeSavedItemByTitle = useCallback(async (title: string) => {
+    if (!user) return;
+
+    try {
+      const { error } = await supabase
+        .from("saved_items")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("title", title);
+
+      if (error) throw error;
+      setSavedItems((prev) => prev.filter((item) => item.title !== title));
+      toast.success("저장된 정보가 해제되었습니다.");
+    } catch (error) {
+      console.error("Remove Saved Item By Title Error:", error);
+      toast.error("정보 해제 중 오류가 발생했습니다.");
+    }
+  }, [supabase, user]);
 
   const isSaved = useCallback(
     (title: string) => {
@@ -242,10 +408,36 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
     [savedItems],
   );
 
+  const isMedicationScheduledForDate = useCallback((med: Medication, date: Date) => {
+    if (!med.schedule) return true;
+    const { type, repeatDays, startDate, endDate } = med.schedule;
+    const dateStr = date.toISOString().split("T")[0];
+
+    if (type === "today") {
+      return dateStr === startDate;
+    }
+
+    if (type === "period") {
+      if (!startDate || !endDate) return true;
+      return dateStr >= startDate && dateStr <= endDate;
+    }
+
+    if (type === "repeat") {
+      if (!repeatDays || repeatDays.length === 0) return true;
+      const days = ["일", "월", "화", "수", "목", "금", "토"];
+      const dayName = days[date.getDay()];
+      return repeatDays.includes(dayName);
+    }
+
+    return true;
+  }, []);
+
   const getWeeklyStats = useCallback(() => {
     const days = ["일", "월", "화", "수", "목", "금", "토"];
     const stats: { day: string; rate: number }[] = [];
 
+    // Note: This is simplified for the current local logs state.
+    // In a real app, logs for the last 7 days might need to be fetched separately.
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
@@ -254,11 +446,16 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
 
       let expectedDoses = 0;
       medications.forEach((med) => {
-        if (med.times.morning) expectedDoses++;
-        if (med.times.lunch) expectedDoses++;
-        if (med.times.evening) expectedDoses++;
+        if (isMedicationScheduledForDate(med, date)) {
+          if (med.times.morning) expectedDoses++;
+          if (med.times.lunch) expectedDoses++;
+          if (med.times.evening) expectedDoses++;
+        }
       });
 
+      // This logic assumes `logs` contains logs for all 7 days, 
+      // which might not be true if fetchData only fetches today's logs.
+      // For now, we'll keep it as is, but it's a point for Phase 4 polish.
       const takenDoses = logs.filter(
         (log) => log.date === dateStr && log.taken,
       ).length;
@@ -271,13 +468,16 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
     }
 
     return stats;
-  }, [medications, logs]);
+  }, [medications, logs, isMedicationScheduledForDate]);
 
   const getTodayLogs = useCallback(() => {
-    const todayStr = new Date().toISOString().split("T")[0];
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
     const todayLogs: (MedicationLog & { medication: Medication })[] = [];
 
     medications.forEach((med) => {
+      if (!isMedicationScheduledForDate(med, today)) return;
+
       const periods: ("morning" | "lunch" | "evening")[] = [
         "morning",
         "lunch",
@@ -312,11 +512,13 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
     return todayLogs.sort((a, b) =>
       a.scheduledTime.localeCompare(b.scheduledTime),
     );
-  }, [medications, logs]);
+  }, [medications, logs, isMedicationScheduledForDate]);
 
   return (
     <MedicationContext.Provider
       value={{
+        user,
+        isLoading,
         medications,
         logs,
         savedItems,

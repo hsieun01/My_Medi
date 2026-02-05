@@ -6,13 +6,13 @@ import { AppHeader } from "@/components/app-header"
 import { MedicationCard } from "@/components/medication-card"
 import { AddMedicationModal } from "@/components/add-medication-modal"
 import { ProgressBar } from "@/components/progress-bar"
-import { Button } from "@/components/ui/bottom-navigation"
+import { Button } from "@/components/ui/button"
 import { useMedication } from "@/lib/medication-context"
 
 export default function DashboardPage() {
   const { getTodayLogs, logMedication, getWeeklyStats, medications } = useMedication()
   const [showAddModal, setShowAddModal] = useState(false)
-  
+
   const todayLogs = getTodayLogs()
   const weeklyStats = getWeeklyStats()
   const averageRate = Math.round(
@@ -22,15 +22,15 @@ export default function DashboardPage() {
   const today = new Date()
   const dayNames = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"]
   const monthNames = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"]
-  
+
   const formattedDate = `${today.getFullYear()}년 ${monthNames[today.getMonth()]} ${today.getDate()}일 ${dayNames[today.getDay()]}`
 
   return (
     <div className="min-h-screen">
       <AppHeader />
-      
-     <main className="max-w-md lg:max-w-6xl mx-auto px-4 lg:px-8 py-6 lg:py-8">
-      <div className="mb-6 lg:mb-8">
+
+      <main className="max-w-md lg:max-w-6xl mx-auto px-4 lg:px-8 py-6 lg:py-8">
+        <div className="mb-6 lg:mb-8">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <Calendar className="h-4 w-4" />
             <span className="text-sm">{formattedDate}</span>

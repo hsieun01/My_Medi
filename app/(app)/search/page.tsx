@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Search, Star, Bot, AlertTriangle, Send, Loader2 } from "lucide-react"
-import { AppHeader } from "@/components/common/app-header"
+import { AppHeader } from "@/components/app-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -14,72 +14,13 @@ import {
 } from "@/components/ui/dialog"
 import { useMedication } from "@/lib/medication-context"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase/client"
+import { getSimpleExplanation, chatWithAi } from "@/lib/actions/ai"
 
 interface ChatMessage {
   role: "user" | "assistant"
   content: string
 }
-
-// Sample data for diseases and drugs
-const diseases = [
-  {
-    id: "1",
-    title: "Hypertension",
-    titleKo: "고혈압",
-    description: "혈압이 정상 범위(수축기 120mmHg, 이완기 80mmHg)보다 지속적으로 높은 상태입니다. 심장, 뇌, 신장 등에 합병증을 유발할 수 있습니다.",
-    medicalTerm: "혈압이 수축기 140mmHg 이상, 이완기 90mmHg 이상으로 지속되는 상태",
-    aiExplanation: "심장이 피를 보낼 때 혈관에 가해지는 압력이 정상보다 높은 상태예요. 쉽게 말해 혈관 벽에 무리가 가는 거죠. 오랫동안 방치하면 심장이나 뇌에 문제가 생길 수 있어서 꾸준한 관리가 중요해요."
-  },
-  {
-    id: "2",
-    title: "Diabetes Mellitus",
-    titleKo: "당뇨병",
-    description: "인슐린 분비 또는 작용 이상으로 혈당이 높아지는 대사 질환입니다. 1형과 2형으로 나뉘며, 합병증 예방을 위한 혈당 관리가 중요합니다.",
-    medicalTerm: "공복 혈당 126mg/dL 이상, 당화혈색소 6.5% 이상",
-    aiExplanation: "우리 몸이 음식에서 얻은 당분을 제대로 사용하지 못하는 상태예요. 인슐린이라는 호르몬이 부족하거나 제대로 작동하지 않아서 생겨요. 식이요법과 운동, 약물로 관리할 수 있어요."
-  },
-  {
-    id: "3",
-    title: "Hyperlipidemia",
-    titleKo: "고지혈증",
-    description: "혈중 콜레스테롤이나 중성지방이 정상보다 높은 상태입니다. 동맥경화의 주요 원인이 됩니다.",
-    medicalTerm: "총 콜레스테롤 200mg/dL 이상, LDL 130mg/dL 이상",
-    aiExplanation: "피 속에 기름기가 너무 많은 상태예요. 혈관 벽에 기름이 쌓이면 혈관이 좁아지고 딱딱해질 수 있어요. 식습관 개선과 운동이 도움이 돼요."
-  }
-]
-
-const drugs = [
-  {
-    id: "1",
-    title: "Aspirin",
-    titleKo: "아스피린",
-    description: "혈액 응고를 억제하는 항혈소판제입니다. 심혈관 질환 예방에 사용됩니다.",
-    purpose: "혈전 예방, 심장마비/뇌졸중 예방",
-    precaution: "위장 출혈 위험이 있으므로 식후 복용 권장",
-    medicalTerm: "아세틸살리실산, COX-1 억제제",
-    aiExplanation: "피가 너무 쉽게 굳어서 혈관을 막는 것을 예방하는 약이에요. 심장이나 뇌로 가는 혈관이 막히면 큰 문제가 생길 수 있는데, 이 약이 그걸 예방해줘요. 위에 자극이 될 수 있으니 밥 먹고 드세요."
-  },
-  {
-    id: "2",
-    title: "Metformin",
-    titleKo: "메트포르민",
-    description: "2형 당뇨병 치료의 1차 약물입니다. 간에서 포도당 생성을 억제합니다.",
-    purpose: "혈당 조절",
-    precaution: "신장 기능 확인 필요, 유산증 주의",
-    medicalTerm: "비구아나이드계 혈당강하제",
-    aiExplanation: "당뇨병 치료에 가장 많이 쓰이는 약이에요. 간에서 당분이 만들어지는 것을 줄여주고, 몸이 인슐린을 더 잘 사용할 수 있게 도와줘요. 신장이 안 좋으면 주의가 필요해요."
-  },
-  {
-    id: "3",
-    title: "Atorvastatin",
-    titleKo: "아토르바스타틴",
-    description: "콜레스테롤 생성을 억제하는 스타틴 계열 약물입니다.",
-    purpose: "콜레스테롤 감소, 심혈관 질환 예방",
-    precaution: "간 기능 모니터링 필요, 근육통 발생 시 의사 상담",
-    medicalTerm: "HMG-CoA 환원효소 억제제",
-    aiExplanation: "우리 몸에서 콜레스테롤이 만들어지는 것을 줄여주는 약이에요. 저녁에 먹으면 효과가 더 좋아요. 드물지만 근육통이 생길 수 있으니 이상하면 의사 선생님께 말씀하세요."
-  }
-]
 
 interface InfoItem {
   id: string
@@ -87,52 +28,112 @@ interface InfoItem {
   titleKo: string
   description: string
   medicalTerm: string
-  aiExplanation: string
+  aiExplanation?: string
   purpose?: string
   precaution?: string
+  type: "disease" | "drug"
 }
 
 export default function SearchPage() {
   const { saveItem, removeSavedItemByTitle, isSaved } = useMedication()
+  const [supabase] = useState(() => createClient())
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState<"disease" | "drug">("disease")
+  const [diseases, setDiseases] = useState<InfoItem[]>([])
+  const [drugs, setDrugs] = useState<InfoItem[]>([])
+  const [isLoading, setIsLoading] = useState(false)
   const [selectedItem, setSelectedItem] = useState<InfoItem | null>(null)
   const [showAiModal, setShowAiModal] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
   const [isAiLoading, setIsAiLoading] = useState(false)
+  const [currentAiExplanation, setCurrentAiExplanation] = useState("")
 
-  const filteredDiseases = diseases.filter(
-    d =>
-      d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.titleKo.includes(searchQuery)
-  )
+  const fetchResults = useCallback(async (query: string) => {
+    setIsLoading(true)
+    try {
+      if (activeTab === "disease") {
+        const { data, error } = await supabase
+          .from("diseases")
+          .select("*")
+          .or(`title.ilike.%${query}%,title_ko.ilike.%${query}%`)
+          .limit(20)
 
-  const filteredDrugs = drugs.filter(
-    d =>
-      d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.titleKo.includes(searchQuery)
-  )
+        if (!error && data) {
+          setDiseases(data.map(d => ({
+            id: d.id,
+            title: d.title,
+            titleKo: d.title_ko,
+            description: d.description,
+            medicalTerm: d.medical_term,
+            type: "disease"
+          })))
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("drugs")
+          .select("*")
+          .or(`title.ilike.%${query}%,title_ko.ilike.%${query}%`)
+          .limit(20)
 
-  const handleSave = (item: InfoItem, type: "disease" | "drug") => {
+        if (!error && data) {
+          setDrugs(data.map(d => ({
+            id: d.id,
+            title: d.title,
+            titleKo: d.title_ko,
+            description: d.description,
+            medicalTerm: d.medical_term,
+            purpose: d.purpose,
+            precaution: d.precaution,
+            type: "drug"
+          })))
+        }
+      }
+    } catch (err) {
+      console.error("Search fetch error:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [supabase, activeTab])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchResults(searchQuery)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery, fetchResults])
+
+  const handleSave = (item: InfoItem) => {
     if (isSaved(item.title)) {
       removeSavedItemByTitle(item.title)
     } else {
       saveItem({
-        type,
+        type: item.type,
         title: item.title,
         titleKo: item.titleKo,
         description: item.description,
-        aiExplanation: item.aiExplanation
+        aiExplanation: currentAiExplanation || undefined
       })
     }
   }
 
-  const handleShowAi = (item: InfoItem) => {
+  const handleShowAi = async (item: InfoItem) => {
     setSelectedItem(item)
     setChatMessages([])
     setChatInput("")
+    setCurrentAiExplanation("")
     setShowAiModal(true)
+    setIsAiLoading(true)
+
+    const explanation = await getSimpleExplanation(
+      item.id,
+      item.type,
+      item.medicalTerm || item.description,
+      item.titleKo || item.title
+    )
+
+    setCurrentAiExplanation(explanation)
+    setIsAiLoading(false)
   }
 
   const handleSendChat = async () => {
@@ -143,19 +144,15 @@ export default function SearchPage() {
     setChatMessages(prev => [...prev, { role: "user", content: userMessage }])
     setIsAiLoading(true)
 
-    // Simulate AI response (in real app, this would call an AI API)
-    setTimeout(() => {
-      const responses: Record<string, string> = {
-        "부작용": `${selectedItem.titleKo}의 일반적인 부작용으로는 가벼운 두통, 소화불량 등이 있을 수 있어요. 심각한 부작용이 느껴지면 즉시 의사와 상담하세요.`,
-        "복용": `${selectedItem.titleKo} 관련 약은 보통 의사의 처방에 따라 복용합니다. 정해진 시간에 규칙적으로 복용하는 것이 중요해요.`,
-        "음식": `${selectedItem.titleKo} 관련 약을 복용할 때는 자몽주스를 피하는 것이 좋고, 술은 약효에 영향을 줄 수 있으니 주의하세요.`,
-        "default": `${selectedItem.titleKo}에 대해 더 궁금하신 점이 있으시군요! 구체적인 의료 상담은 담당 의사나 약사와 상담하시는 것이 가장 정확합니다. 일반적인 정보는 제가 도와드릴 수 있어요.`
-      }
-      
-      const key = Object.keys(responses).find(k => userMessage.includes(k)) || "default"
-      setChatMessages(prev => [...prev, { role: "assistant", content: responses[key] }])
-      setIsAiLoading(false)
-    }, 1000)
+    const response = await chatWithAi(
+      chatMessages,
+      userMessage,
+      selectedItem.titleKo || selectedItem.title,
+      `${selectedItem.medicalTerm}. ${currentAiExplanation}`
+    )
+
+    setChatMessages(prev => [...prev, { role: "assistant", content: response }])
+    setIsAiLoading(false)
   }
 
   return (
@@ -163,7 +160,6 @@ export default function SearchPage() {
       <AppHeader title="정보탐색" />
 
       <main className="max-w-md lg:max-w-4xl mx-auto px-4 lg:px-8 py-6 lg:py-8">
-        {/* Search Input */}
         <div className="relative mb-6 lg:mb-8 lg:max-w-xl">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
@@ -175,7 +171,6 @@ export default function SearchPage() {
           />
         </div>
 
-        {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "disease" | "drug")}>
           <TabsList className="grid w-full grid-cols-2 mb-6 lg:w-80">
             <TabsTrigger value="disease">질환 정보</TabsTrigger>
@@ -184,43 +179,44 @@ export default function SearchPage() {
 
           <TabsContent value="disease">
             <div className="grid gap-4 lg:grid-cols-2">
-              {filteredDiseases.map(item => (
+              {diseases.map(item => (
                 <InfoCard
                   key={item.id}
                   item={item}
                   type="disease"
                   isSaved={isSaved(item.title)}
-                  onSave={() => handleSave(item, "disease")}
+                  onSave={() => handleSave(item)}
                   onShowAi={() => handleShowAi(item)}
                 />
               ))}
             </div>
-            {filteredDiseases.length === 0 && (
+            {!isLoading && diseases.length === 0 && (
               <EmptySearchResult query={searchQuery} />
             )}
+            {isLoading && <SearchLoadingState />}
           </TabsContent>
 
           <TabsContent value="drug">
             <div className="grid gap-4 lg:grid-cols-2">
-              {filteredDrugs.map(item => (
+              {drugs.map(item => (
                 <InfoCard
                   key={item.id}
                   item={item}
                   type="drug"
                   isSaved={isSaved(item.title)}
-                  onSave={() => handleSave(item, "drug")}
+                  onSave={() => handleSave(item)}
                   onShowAi={() => handleShowAi(item)}
                 />
               ))}
             </div>
-            {filteredDrugs.length === 0 && (
+            {!isLoading && drugs.length === 0 && (
               <EmptySearchResult query={searchQuery} />
             )}
+            {isLoading && <SearchLoadingState />}
           </TabsContent>
         </Tabs>
       </main>
 
-      {/* AI Explanation Modal */}
       <Dialog open={showAiModal} onOpenChange={setShowAiModal}>
         <DialogContent className="max-w-md lg:max-w-lg mx-auto max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
@@ -233,13 +229,13 @@ export default function SearchPage() {
           </DialogHeader>
 
           {selectedItem && (
-            <div className="flex-1 overflow-y-auto space-y-4">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               <div>
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
                   원본 의학 용어
                 </h4>
                 <p className="text-sm bg-secondary/50 p-3 rounded-lg text-foreground">
-                  {selectedItem.medicalTerm}
+                  {selectedItem.medicalTerm || selectedItem.description}
                 </p>
               </div>
 
@@ -247,10 +243,17 @@ export default function SearchPage() {
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
                   AI 쉬운 설명
                 </h4>
-                <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {selectedItem.aiExplanation}
-                  </p>
+                <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg min-h-[80px] flex items-center justify-center">
+                  {isAiLoading && !currentAiExplanation ? (
+                    <div className="flex items-center gap-2 text-primary">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>설명 생성 중...</span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {currentAiExplanation}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -261,15 +264,13 @@ export default function SearchPage() {
                 </p>
               </div>
 
-              {/* AI Chat Section */}
               <div className="border-t border-border pt-4">
                 <h4 className="text-sm font-medium text-muted-foreground mb-3">
                   AI에게 추가 질문하기
                 </h4>
-                
-                {/* Chat Messages */}
+
                 {chatMessages.length > 0 && (
-                  <div className="space-y-3 mb-4 max-h-40 overflow-y-auto">
+                  <div className="space-y-3 mb-4 max-h-40 overflow-y-auto scrollbar-hide">
                     {chatMessages.map((msg, idx) => (
                       <div
                         key={idx}
@@ -289,7 +290,7 @@ export default function SearchPage() {
                         <p className="leading-relaxed">{msg.content}</p>
                       </div>
                     ))}
-                    {isAiLoading && (
+                    {isAiLoading && chatMessages.length > 0 && (
                       <div className="bg-secondary text-foreground mr-8 p-3 rounded-lg text-sm">
                         <div className="flex items-center gap-2">
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -300,7 +301,6 @@ export default function SearchPage() {
                   </div>
                 )}
 
-                {/* Chat Input */}
                 <div className="flex gap-2">
                   <Input
                     placeholder="예: 부작용이 있나요?"
@@ -330,26 +330,15 @@ export default function SearchPage() {
                 <Button
                   variant="outline"
                   className="flex-1 bg-transparent"
-                  onClick={() => {
-                    if (selectedItem && !isSaved(selectedItem.title)) {
-                      saveItem({
-                        type: activeTab,
-                        title: selectedItem.title,
-                        titleKo: selectedItem.titleKo,
-                        description: selectedItem.description,
-                        aiExplanation: selectedItem.aiExplanation
-                      })
-                    }
-                    setShowAiModal(false)
-                  }}
+                  onClick={() => handleSave(selectedItem)}
                 >
                   <Star className={cn(
                     "h-4 w-4 mr-2",
-                    selectedItem && isSaved(selectedItem.title) 
-                      ? "fill-yellow-400 text-yellow-400" 
+                    isSaved(selectedItem.title)
+                      ? "fill-yellow-400 text-yellow-400"
                       : ""
                   )} />
-                  저장하기
+                  {isSaved(selectedItem.title) ? "저장됨" : "저장하기"}
                 </Button>
                 <Button
                   className="flex-1 bg-primary text-primary-foreground"
@@ -366,34 +355,28 @@ export default function SearchPage() {
   )
 }
 
-interface InfoCardProps {
-  item: InfoItem
-  type: "disease" | "drug"
-  isSaved: boolean
-  onSave: () => void
-  onShowAi: () => void
-}
-
-function InfoCard({ item, type, isSaved, onSave, onShowAi }: InfoCardProps) {
+function InfoCard({ item, type, isSaved, onSave, onShowAi }: { item: InfoItem, type: string, isSaved: boolean, onSave: () => void, onShowAi: () => void }) {
   return (
-    <div className="bg-card rounded-xl p-4 shadow-sm border border-border">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1">
-          <h3 className="font-semibold text-foreground">
-            {item.titleKo}
-            <span className="font-normal text-muted-foreground ml-2 text-sm">
-              ({item.title})
-            </span>
-          </h3>
-          <div className="w-full h-px bg-border my-2" />
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {item.description}
-          </p>
-          {type === "drug" && item.precaution && (
-            <p className="text-sm text-amber-600 mt-2">
-              주의: {item.precaution}
+    <div className="bg-card rounded-xl p-4 shadow-sm border border-border flex flex-col justify-between">
+      <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <h3 className="font-semibold text-foreground">
+              {item.titleKo}
+              <span className="font-normal text-muted-foreground ml-2 text-sm">
+                ({item.title})
+              </span>
+            </h3>
+            <div className="w-full h-px bg-border my-2" />
+            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+              {item.description}
             </p>
-          )}
+            {type === "drug" && item.precaution && (
+              <p className="text-sm text-amber-600 mt-2 font-medium">
+                주의: {item.precaution}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -431,11 +414,19 @@ function EmptySearchResult({ query }: { query: string }) {
     <div className="text-center py-12">
       <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
       <p className="text-muted-foreground">
-        {query 
+        {query
           ? `"${query}"에 대한 검색 결과가 없습니다`
           : "검색어를 입력해주세요"
         }
       </p>
+    </div>
+  )
+}
+
+function SearchLoadingState() {
+  return (
+    <div className="flex items-center justify-center py-12 text-primary">
+      <Loader2 className="h-8 w-8 animate-spin" />
     </div>
   )
 }
