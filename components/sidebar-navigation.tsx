@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Home, Search, User, Pill, LogOut, History, Settings } from "lucide-react"
+import { useMedication } from "@/lib/medication-context"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 const mainNavItems = [
@@ -18,6 +20,19 @@ const subNavItems = [
 
 export function SidebarNavigation() {
   const pathname = usePathname()
+  const { user, supabase } = useMedication()
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      toast.success("로그아웃되었습니다.")
+      window.location.href = "/welcome"
+    } catch (error) {
+      console.error("Logout Error:", error)
+      toast.error("로그아웃 중 오류가 발생했습니다.")
+    }
+  }
 
   return (
     <aside className="hidden lg:flex flex-col w-64 min-h-screen bg-card border-r border-border fixed left-0 top-0">
@@ -38,18 +53,18 @@ export function SidebarNavigation() {
       <nav className="flex-1 p-4">
         <div className="space-y-1">
           {mainNavItems.map(item => {
-            const isActive = pathname === item.href || 
+            const isActive = pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href))
             const Icon = item.icon
-            
+
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
                   "flex items-center gap-3 px-4 py-3 rounded-xl transition-all",
-                  isActive 
-                    ? "bg-primary text-primary-foreground shadow-md" 
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-md"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 )}
                 aria-current={isActive ? "page" : undefined}
@@ -74,15 +89,15 @@ export function SidebarNavigation() {
             {subNavItems.map(item => {
               const isActive = pathname === item.href
               const Icon = item.icon
-              
+
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
                     "flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors",
-                    isActive 
-                      ? "bg-secondary text-foreground" 
+                    isActive
+                      ? "bg-secondary text-foreground"
                       : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                   )}
                 >
@@ -98,14 +113,25 @@ export function SidebarNavigation() {
       {/* User Profile Section */}
       <div className="p-4 border-t border-border">
         <div className="flex items-center gap-3 px-4 py-3 bg-secondary/50 rounded-xl">
-          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-            <User className="h-5 w-5 text-primary" />
+          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center overflow-hidden">
+            {user ? (
+              <div className="w-full h-full flex items-center justify-center bg-primary/20 text-primary font-bold">
+                {user.email?.[0].toUpperCase()}
+              </div>
+            ) : (
+              <User className="h-5 w-5 text-primary" />
+            )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm text-foreground truncate">사용자</p>
-            <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+            <p className="font-medium text-sm text-foreground truncate">
+              {user ? user.email?.split('@')[0] : "로그인 필요"}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {user?.email || "방문자"}
+            </p>
           </div>
-          <button 
+          <button
+            onClick={handleLogout}
             className="p-2 hover:bg-secondary rounded-lg transition-colors"
             aria-label="로그아웃"
           >

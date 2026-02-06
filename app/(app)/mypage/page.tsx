@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   User,
   LogOut,
@@ -47,7 +48,8 @@ interface ChatMessage {
 }
 
 export default function MyPage() {
-  const { savedItems, medications, removeSavedItem, deleteMedication } = useMedication()
+  const { user, supabase, isLoading, savedItems, medications, removeSavedItem, deleteMedication } = useMedication()
+  const router = useRouter()
   const [showAllSaved, setShowAllSaved] = useState(false)
   const [editingMedication, setEditingMedication] = useState<Medication | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -57,6 +59,23 @@ export default function MyPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState("")
   const [isAiLoading, setIsAiLoading] = useState(false)
+
+  // Auth Guard
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push("/login")
+    }
+  }, [user, isLoading, router])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!user) return null
 
   const displayedSavedItems = showAllSaved ? savedItems : savedItems.slice(0, 3)
 
@@ -77,10 +96,10 @@ export default function MyPage() {
 
     setTimeout(() => {
       const responses: Record<string, string> = {
-        "부작용": `${selectedSavedItem.titleKo || selectedSavedItem.title}의 일반적인 부작용으로는 가벼운 두통, 소화불량 등이 있을 수 있어요. 심각한 부작용이 느껴지면 즉시 의사와 상담하세요.`,
-        "복용": `${selectedSavedItem.titleKo || selectedSavedItem.title} 관련 약은 보통 의사의 처방에 따라 복용합니다. 정해진 시간에 규칙적으로 복용하는 것이 중요해요.`,
-        "음식": `${selectedSavedItem.titleKo || selectedSavedItem.title} 관련 약을 복용할 때는 자몽주스를 피하는 것이 좋고, 술은 약효에 영향을 줄 수 있으니 주의하세요.`,
-        "default": `${selectedSavedItem.titleKo || selectedSavedItem.title}에 대해 더 궁금하신 점이 있으시군요! 구체적인 의료 상담은 담당 의사나 약사와 상담하시는 것이 가장 정확합니다.`
+        "부작용": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title}의 일반적인 부작용으로는 가벼운 두통, 소화불량 등이 있을 수 있어요. 심각한 부작용이 느껴지면 즉시 의사와 상담하세요.`,
+        "복용": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title} 관련 약은 보통 의사의 처방에 따라 복용합니다. 정해진 시간에 규칙적으로 복용하는 것이 중요해요.`,
+        "음식": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title} 관련 약을 복용할 때는 자몽주스를 피하는 것이 좋고, 술은 약효에 영향을 줄 수 있으니 주의하세요.`,
+        "default": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title}에 대해 더 궁금하신 점이 있으시군요! 구체적인 의료 상담은 담당 의사나 약사와 상담하시는 것이 가장 정확합니다.`
       }
 
       const key = Object.keys(responses).find(k => userMessage.includes(k)) || "default"
@@ -108,14 +127,34 @@ export default function MyPage() {
         {/* User Info Section */}
         <section className="bg-card rounded-xl p-4 shadow-sm border border-border">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center">
-              <User className="h-7 w-7 text-muted-foreground" />
+            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+              {user?.email ? (
+                <div className="w-full h-full flex items-center justify-center bg-primary/20 text-primary font-bold text-xl">
+                  {user.email[0].toUpperCase()}
+                </div>
+              ) : (
+                <User className="h-7 w-7 text-muted-foreground" />
+              )}
             </div>
-            <div className="flex-1">
-              <h2 className="font-semibold text-foreground">사용자</h2>
-              <p className="text-sm text-muted-foreground">user@email.com</p>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold text-foreground truncate">
+                {user?.email?.split('@')[0] || "사용자"}
+              </h2>
+              <p className="text-sm text-muted-foreground truncate">
+                {user?.email || "로그인 필요"}
+              </p>
             </div>
-            <Button variant="ghost" size="sm" className="text-muted-foreground">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={async () => {
+                const { error } = await supabase.auth.signOut()
+                if (!error) {
+                  router.push("/welcome")
+                }
+              }}
+            >
               <LogOut className="h-4 w-4 mr-2" />
               로그아웃
             </Button>
@@ -155,16 +194,10 @@ export default function MyPage() {
                         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                         <div>
                           <p className="font-medium text-foreground text-sm">
-                            {item.titleKo || item.title}
+                            {item.originalData?.title_ko || item.originalData?.title}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {item.type === "disease" ? "질환" : "약"}
-                            {item.aiExplanation && (
-                              <span className="ml-2 inline-flex items-center gap-1">
-                                <Bot className="h-3 w-3" />
-                                AI 설명 포함
-                              </span>
-                            )}
                           </p>
                         </div>
                       </div>
@@ -339,7 +372,7 @@ export default function MyPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-              {selectedSavedItem?.titleKo || selectedSavedItem?.title}
+              {selectedSavedItem?.originalData?.title_ko || selectedSavedItem?.originalData?.title}
             </DialogTitle>
           </DialogHeader>
 
@@ -350,23 +383,10 @@ export default function MyPage() {
                   {selectedSavedItem.type === "disease" ? "질환" : "약"}
                 </span>
                 <p className="text-sm text-foreground leading-relaxed">
-                  {selectedSavedItem.description}
+                  {selectedSavedItem.originalData?.description}
                 </p>
               </div>
 
-              {selectedSavedItem.aiExplanation && (
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                    <Bot className="h-4 w-4" />
-                    AI 쉬운 설명
-                  </h4>
-                  <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
-                    <p className="text-sm text-foreground leading-relaxed">
-                      {selectedSavedItem.aiExplanation}
-                    </p>
-                  </div>
-                </div>
-              )}
 
               <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />

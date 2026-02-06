@@ -35,7 +35,7 @@ interface InfoItem {
 }
 
 export default function SearchPage() {
-  const { saveItem, removeSavedItemByTitle, isSaved } = useMedication()
+  const { toggleSaveItem, isSaved } = useMedication()
   const [supabase] = useState(() => createClient())
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState<"disease" | "drug">("disease")
@@ -104,17 +104,7 @@ export default function SearchPage() {
   }, [searchQuery, fetchResults])
 
   const handleSave = (item: InfoItem) => {
-    if (isSaved(item.title)) {
-      removeSavedItemByTitle(item.title)
-    } else {
-      saveItem({
-        type: item.type,
-        title: item.title,
-        titleKo: item.titleKo,
-        description: item.description,
-        aiExplanation: currentAiExplanation || undefined
-      })
-    }
+    toggleSaveItem(item.id, item.type)
   }
 
   const handleShowAi = async (item: InfoItem) => {
@@ -194,7 +184,7 @@ export default function SearchPage() {
                   key={item.id}
                   item={item}
                   type="disease"
-                  isSaved={isSaved(item.title)}
+                  isSaved={isSaved(item.id)}
                   onSave={() => handleSave(item)}
                   onShowAi={() => handleShowAi(item)}
                 />
@@ -213,7 +203,7 @@ export default function SearchPage() {
                   key={item.id}
                   item={item}
                   type="drug"
-                  isSaved={isSaved(item.title)}
+                  isSaved={isSaved(item.id)}
                   onSave={() => handleSave(item)}
                   onShowAi={() => handleShowAi(item)}
                 />

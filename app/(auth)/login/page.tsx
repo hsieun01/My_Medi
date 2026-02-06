@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { toast } from "sonner"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 export default function LoginPage() {
@@ -27,6 +29,8 @@ export default function LoginPage() {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return emailRegex.test(email)
   }
+
+  const [supabase] = useState(() => createClient())
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,10 +50,24 @@ export default function LoginPage() {
 
     if (Object.keys(newErrors).length === 0) {
       setIsLoading(true)
-      // Simulate login
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      setIsLoading(false)
-      router.push("/")
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        })
+
+        if (error) {
+          toast.error(error.message || "로그인에 실패했습니다")
+          return
+        }
+
+        router.push("/")
+      } catch (err) {
+        console.error("Login unexpected error:", err)
+        toast.error("오류가 발생했습니다. 다시 시도해 주세요.")
+      } finally {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -72,8 +90,8 @@ export default function LoginPage() {
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <header className="flex items-center justify-between px-4 lg:px-8 h-14 border-b border-border bg-card">
-          <Link 
-            href="/welcome" 
+          <Link
+            href="/welcome"
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -163,7 +181,7 @@ export default function LoginPage() {
                   <Checkbox
                     id="rememberMe"
                     checked={formData.rememberMe}
-                    onCheckedChange={(checked) => 
+                    onCheckedChange={(checked) =>
                       setFormData(prev => ({ ...prev, rememberMe: checked === true }))
                     }
                   />
@@ -171,8 +189,8 @@ export default function LoginPage() {
                     로그인 상태 유지
                   </Label>
                 </div>
-                <Link 
-                  href="/forgot-password" 
+                <Link
+                  href="/forgot-password"
                   className="text-sm text-primary hover:underline"
                 >
                   비밀번호 찾기
@@ -180,8 +198,8 @@ export default function LoginPage() {
               </div>
 
               {/* Submit Button */}
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full h-12 text-base font-semibold"
                 disabled={isLoading}
               >
@@ -217,8 +235,8 @@ export default function LoginPage() {
             </div>
 
             {/* Social Login */}
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="w-full h-12 bg-transparent"
               type="button"
             >

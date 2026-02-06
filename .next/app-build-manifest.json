@@ -16,10 +16,20 @@
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
+    "/(app)/mypage/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(app)/mypage/page.js"
+    ],
     "/(app)/search/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(app)/search/page.js"
+    ],
+    "/(app)/mypage/history/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(app)/mypage/history/page.js"
     ]
   }
 }

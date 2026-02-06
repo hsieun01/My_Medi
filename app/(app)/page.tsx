@@ -9,9 +9,31 @@ import { ProgressBar } from "@/components/progress-bar"
 import { Button } from "@/components/ui/button"
 import { useMedication } from "@/lib/medication-context"
 
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
+import { Loader2 } from "lucide-react"
+
 export default function DashboardPage() {
-  const { getTodayLogs, logMedication, getWeeklyStats, medications } = useMedication()
+  const { user, isLoading, getTodayLogs, logMedication, getWeeklyStats, medications } = useMedication()
+  const router = useRouter()
   const [showAddModal, setShowAddModal] = useState(false)
+
+  // Auth Guard
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push("/welcome")
+    }
+  }, [user, isLoading, router])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!user) return null
 
   const todayLogs = getTodayLogs()
   const weeklyStats = getWeeklyStats()

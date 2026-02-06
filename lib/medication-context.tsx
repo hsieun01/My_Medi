@@ -46,14 +46,20 @@ export interface MedicationLog {
 export interface SavedItem {
   id: string;
   type: "disease" | "drug";
-  title: string;
-  titleKo?: string;
-  description: string;
-  aiExplanation?: string;
+  targetId: string;
   savedAt: string;
+  originalData?: {
+    id: string;
+    title: string;
+    titleKo: string;
+    description: string;
+    medicalTerm?: string;
+    [key: string]: any;
+  };
 }
 
 interface MedicationContextType {
+  supabase: any;
   user: User | null;
   isLoading: boolean;
   medications: Medication[];
@@ -66,10 +72,9 @@ interface MedicationContextType {
     medicationId: string,
     period: "morning" | "lunch" | "evening",
   ) => Promise<void>;
-  saveItem: (item: Omit<SavedItem, "id" | "savedAt">) => Promise<void>;
+  toggleSaveItem: (targetId: string, type: "disease" | "drug") => Promise<void>;
   removeSavedItem: (id: string) => Promise<void>;
-  removeSavedItemByTitle: (title: string) => Promise<void>;
-  isSaved: (title: string) => boolean;
+  isSaved: (targetId: string) => boolean;
   getWeeklyStats: () => { day: string; rate: number }[];
   getTodayLogs: () => (MedicationLog & { medication: Medication })[];
 }
@@ -87,14 +92,16 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
+    console.info("MedicationProvider: Initializing auth listener");
 
-    getUser();
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log("MedicationProvider: Initial session check:", session?.user?.id || "null");
+      setUser(session?.user ?? null);
+    });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("MedicationProvider: Auth state change event:", event, session?.user?.id || "null");
       setUser(session?.user ?? null);
     });
 
@@ -141,16 +148,36 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
       })) as any);
     }
 
-    if (!savedRes.error) {
-      setSavedItems(savedRes.data.map(s => ({
+    if (savedRes.error) {
+      console.error("Fetch Saved Items Error:", savedRes.error);
+    }
+
+    if (!savedRes.error && savedRes.data) {
+      console.log("Fetched saved items from DB:", savedRes.data.length);
+      const savedData = savedRes.data;
+      const diseaseIds = savedData.filter(s => s.type === "disease").map(s => s.target_id);
+      const drugIds = savedData.filter(s => s.type === "drug").map(s => s.target_id);
+
+      const [diseasesRes, drugsRes] = await Promise.all([
+        diseaseIds.length > 0 ? supabase.from("diseases").select("*").in("id", diseaseIds) : Promise.resolve({ data: [] }),
+        drugIds.length > 0 ? supabase.from("drugs").select("*").in("id", drugIds) : Promise.resolve({ data: [] }),
+      ]);
+
+      const diseasesMap = new Map((diseasesRes.data || []).map(d => [d.id, d]));
+      const drugsMap = new Map((drugsRes.data || []).map(d => [d.id, d]));
+
+      const mappedItems = savedData.map(s => ({
         id: s.id,
         type: s.type,
-        title: s.title,
-        titleKo: s.title_ko,
-        description: s.description,
-        aiExplanation: s.ai_explanation,
-        savedAt: s.created_at
-      })) as any);
+        targetId: s.target_id,
+        savedAt: s.created_at,
+        originalData: s.type === "disease"
+          ? diseasesMap.get(s.target_id)
+          : drugsMap.get(s.target_id)
+      })).filter(s => s.originalData);
+
+      console.log("Mapped saved items:", mappedItems.length);
+      setSavedItems(mappedItems as any);
     }
 
     setIsLoading(false);
@@ -325,46 +352,88 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
     [supabase, user, medications, logs],
   );
 
-  const saveItem = useCallback(
-    async (item: Omit<SavedItem, "id" | "savedAt">) => {
-      if (!user) return;
+  const toggleSaveItem = useCallback(
+    async (targetId: string, type: "disease" | "drug") => {
+      console.log("toggleSaveItem called:", { targetId, type });
+
+      let currentUser = user;
+
+      // Fallback: Check direct Supabase session if local state is null
+      if (!currentUser) {
+        console.log("toggleSaveItem: User state is null, checking direct session...");
+        const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+        if (supabaseUser) {
+          console.log("toggleSaveItem: Found user in direct session:", supabaseUser.id);
+          setUser(supabaseUser);
+          currentUser = supabaseUser;
+        }
+      }
+
+      console.log("toggleSaveItem execution user:", currentUser ? currentUser.id : "null");
+
+      if (!currentUser) {
+        console.error("toggleSaveItem: No authenticated user found even after fallback");
+        toast.error("로그인이 필요한 기능입니다.");
+        return;
+      }
+
+      const existingBookmark = savedItems.find(
+        (item) => item.targetId === targetId && item.type === type
+      );
+      console.log("Existing bookmark check:", !!existingBookmark);
+
+      // --- Optimistic Update ---
+      const originalSavedItems = [...savedItems];
+      if (existingBookmark) {
+        console.log("Removing bookmark optimistically");
+        setSavedItems((prev) => prev.filter((item) => item.targetId !== targetId));
+      } else {
+        console.log("Adding bookmark optimistically");
+        setSavedItems((prev) => [
+          {
+            id: "temp-" + Date.now(),
+            type,
+            targetId,
+            savedAt: new Date().toISOString(),
+            originalData: {} // Placeholder to satisfy isSaved check and filter
+          } as any,
+          ...prev,
+        ]);
+      }
+      // -------------------------
 
       try {
-        const { data, error } = await supabase
-          .from("saved_items")
-          .insert({
-            user_id: user.id,
-            type: item.type,
-            title: item.title,
-            title_ko: item.titleKo,
-            description: item.description,
-            ai_explanation: item.aiExplanation
-          })
-          .select()
-          .single();
+        if (existingBookmark) {
+          const { error } = await supabase
+            .from("saved_items")
+            .delete()
+            .eq("id", existingBookmark.id);
+          if (error) throw error;
+          toast.success("북마크가 해제되었습니다.");
+        } else {
+          const { data, error } = await supabase
+            .from("saved_items")
+            .insert({
+              user_id: currentUser.id, // Use currentUser from fallback
+              type,
+              target_id: targetId,
+            })
+            .select()
+            .single();
 
-        if (error) throw error;
-        if (data) {
-          setSavedItems((prev) => [
-            {
-              id: data.id,
-              type: data.type,
-              title: data.title,
-              titleKo: data.title_ko,
-              description: data.description,
-              aiExplanation: data.ai_explanation,
-              savedAt: data.created_at
-            } as any,
-            ...prev,
-          ]);
-          toast.success("관심 정보가 저장되었습니다.");
+          if (error) throw error;
+          console.log("Bookmark inserted into DB:", data.id);
+          // Refresh data to get original details for My Page
+          fetchData();
+          toast.success("북마크에 추가되었습니다.");
         }
       } catch (error) {
-        console.error("Save Item Error:", error);
-        toast.error("정보 저장 중 오류가 발생했습니다.");
+        console.error("Toggle Save Item Error:", error);
+        setSavedItems(originalSavedItems);
+        toast.error("처리 중 오류가 발생했습니다.");
       }
     },
-    [supabase, user],
+    [supabase, user, savedItems, fetchData]
   );
 
   const removeSavedItem = useCallback(async (id: string) => {
@@ -375,35 +444,16 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       setSavedItems((prev) => prev.filter((item) => item.id !== id));
-      toast.success("저장된 정보가 해제되었습니다.");
+      toast.success("북마크가 해제되었습니다.");
     } catch (error) {
       console.error("Remove Saved Item Error:", error);
       toast.error("정보 해제 중 오류가 발생했습니다.");
     }
   }, [supabase, user]);
 
-  const removeSavedItemByTitle = useCallback(async (title: string) => {
-    if (!user) return;
-
-    try {
-      const { error } = await supabase
-        .from("saved_items")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("title", title);
-
-      if (error) throw error;
-      setSavedItems((prev) => prev.filter((item) => item.title !== title));
-      toast.success("저장된 정보가 해제되었습니다.");
-    } catch (error) {
-      console.error("Remove Saved Item By Title Error:", error);
-      toast.error("정보 해제 중 오류가 발생했습니다.");
-    }
-  }, [supabase, user]);
-
   const isSaved = useCallback(
-    (title: string) => {
-      return savedItems.some((item) => item.title === title);
+    (targetId: string) => {
+      return savedItems.some((item) => item.targetId === targetId);
     },
     [savedItems],
   );
@@ -517,6 +567,7 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
   return (
     <MedicationContext.Provider
       value={{
+        supabase,
         user,
         isLoading,
         medications,
@@ -526,9 +577,8 @@ export function MedicationProvider({ children }: { children: ReactNode }) {
         updateMedication,
         deleteMedication,
         logMedication,
-        saveItem,
+        toggleSaveItem,
         removeSavedItem,
-        removeSavedItemByTitle,
         isSaved,
         getWeeklyStats,
         getTodayLogs,
