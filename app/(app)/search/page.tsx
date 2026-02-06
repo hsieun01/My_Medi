@@ -15,7 +15,7 @@ import {
 import { useMedication } from "@/lib/medication-context"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
-import { getSimpleExplanation, chatWithAi } from "@/lib/actions/ai"
+// removed server action imports
 
 interface ChatMessage {
   role: "user" | "assistant"
@@ -125,14 +125,19 @@ export default function SearchPage() {
     setShowAiModal(true)
     setIsAiLoading(true)
 
-    const explanation = await getSimpleExplanation(
-      item.id,
-      item.type,
-      item.medicalTerm || item.description,
-      item.titleKo || item.title
-    )
+    const res = await fetch("/api/ai", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "explanation",
+        targetId: item.id,
+        targetType: item.type,
+        medicalTerm: item.medicalTerm || item.description,
+        targetName: item.titleKo || item.title
+      })
+    })
 
-    setCurrentAiExplanation(explanation)
+    const data = await res.json()
+    setCurrentAiExplanation(data.content)
     setIsAiLoading(false)
   }
 
@@ -144,14 +149,19 @@ export default function SearchPage() {
     setChatMessages(prev => [...prev, { role: "user", content: userMessage }])
     setIsAiLoading(true)
 
-    const response = await chatWithAi(
-      chatMessages,
-      userMessage,
-      selectedItem.titleKo || selectedItem.title,
-      `${selectedItem.medicalTerm}. ${currentAiExplanation}`
-    )
+    const res = await fetch("/api/ai", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "chat",
+        chatHistory: chatMessages,
+        query: userMessage,
+        targetName: selectedItem.titleKo || selectedItem.title,
+        context: `${selectedItem.medicalTerm}. ${currentAiExplanation}`
+      })
+    })
 
-    setChatMessages(prev => [...prev, { role: "assistant", content: response }])
+    const data = await res.json()
+    setChatMessages(prev => [...prev, { role: "assistant", content: data.content }])
     setIsAiLoading(false)
   }
 
