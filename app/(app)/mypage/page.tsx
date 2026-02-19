@@ -94,18 +94,28 @@ export default function MyPage() {
     setChatMessages(prev => [...prev, { role: "user", content: userMessage }])
     setIsAiLoading(true)
 
-    setTimeout(() => {
-      const responses: Record<string, string> = {
-        "부작용": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title}의 일반적인 부작용으로는 가벼운 두통, 소화불량 등이 있을 수 있어요. 심각한 부작용이 느껴지면 즉시 의사와 상담하세요.`,
-        "복용": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title} 관련 약은 보통 의사의 처방에 따라 복용합니다. 정해진 시간에 규칙적으로 복용하는 것이 중요해요.`,
-        "음식": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title} 관련 약을 복용할 때는 자몽주스를 피하는 것이 좋고, 술은 약효에 영향을 줄 수 있으니 주의하세요.`,
-        "default": `${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title}에 대해 더 궁금하신 점이 있으시군요! 구체적인 의료 상담은 담당 의사나 약사와 상담하시는 것이 가장 정확합니다.`
-      }
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "chat",
+          chatHistory: chatMessages,
+          query: userMessage,
+          targetName: selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title,
+          context: `진단/약품명: ${selectedSavedItem.originalData?.title_ko || selectedSavedItem.originalData?.title}. 설명: ${selectedSavedItem.originalData?.description || ""}`
+        })
+      })
 
-      const key = Object.keys(responses).find(k => userMessage.includes(k)) || "default"
-      setChatMessages(prev => [...prev, { role: "assistant", content: responses[key] }])
+      if (!res.ok) throw new Error("AI Request Failed")
+
+      const data = await res.json()
+      setChatMessages(prev => [...prev, { role: "assistant", content: data.content }])
+    } catch (error) {
+      console.error("Chat Error:", error)
+      setChatMessages(prev => [...prev, { role: "assistant", content: "AI 응답을 도중 오류가 발생했습니다." }])
+    } finally {
       setIsAiLoading(false)
-    }, 1000)
+    }
   }
 
   const handleDeleteConfirm = () => {

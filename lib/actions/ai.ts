@@ -1,9 +1,6 @@
 "use server"
 
-import { GoogleGenerativeAI } from "@google/generative-ai"
 import { createClient } from "@/lib/supabase/server"
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!)
 
 export async function getSimpleExplanation(
     targetId: string,
@@ -24,7 +21,7 @@ export async function getSimpleExplanation(
         return cache.content
     }
 
-    // 2. Clear Prompt for Gemini
+    // 2. Clear Prompt for Groq
     const prompt = `
     당신의 임무는 어려운 의학 정보를 일반인도 이해하기 아주 쉽게 설명해주는 것입니다.
     대상: ${targetName} (${targetType === "disease" ? "질환" : "약품"})
@@ -33,16 +30,37 @@ export async function getSimpleExplanation(
   `
 
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
-        const result = await model.generateContent(prompt)
-        const explanation = result.response.text().trim()
+        const apiKey = process.env.GROQ_API_KEY
+        if (!apiKey) throw new Error("GROQ_API_KEY is missing")
 
-        // 3. Save to Cache (Using service role would be better, but keeping original logic)
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "llama3-8b-8192",
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.7,
+                max_tokens: 512
+            })
+        })
+
+        if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(`Groq API Error: ${JSON.stringify(errorData)}`)
+        }
+
+        const data = await response.json()
+        const explanation = data.choices[0].message.content.trim()
+
+        // 3. Save to Cache
         await supabase.from("ai_explanations").insert({
             target_id: targetId,
             target_type: targetType,
             content: explanation,
-            model: "gemini-1.5-flash"
+            model: "llama3-8b-8192"
         })
 
         return explanation

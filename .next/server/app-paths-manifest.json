@@ -1,7 +1,7 @@
 {
-  "/api/ai/route": "app/api/ai/route.js",
+  "/api/chat/route": "app/api/chat/route.js",
   "/(app)/page": "app/(app)/page.js",
   "/(app)/mypage/page": "app/(app)/mypage/page.js",
-  "/(app)/search/page": "app/(app)/search/page.js",
-  "/(app)/mypage/history/page": "app/(app)/mypage/history/page.js"
+  "/(app)/mypage/history/page": "app/(app)/mypage/history/page.js",
+  "/(app)/search/page": "app/(app)/search/page.js"
 }

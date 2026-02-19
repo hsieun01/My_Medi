@@ -115,7 +115,7 @@ export default function SearchPage() {
     setShowAiModal(true)
     setIsAiLoading(true)
 
-    const res = await fetch("/api/ai", {
+    const res = await fetch("/api/chat", {
       method: "POST",
       body: JSON.stringify({
         action: "explanation",
@@ -139,7 +139,7 @@ export default function SearchPage() {
     setChatMessages(prev => [...prev, { role: "user", content: userMessage }])
     setIsAiLoading(true)
 
-    const res = await fetch("/api/ai", {
+    const res = await fetch("/api/chat", {
       method: "POST",
       body: JSON.stringify({
         action: "chat",
